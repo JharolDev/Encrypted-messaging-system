@@ -28,7 +28,8 @@ jobs:
 
       - name: Scan image with Anchore (improved)
         run: |
-          docker run -v $(pwd)/anchore-reports:/reports anchore/inline-scan:v0.7.2 --image myapp:${{ github.sha }} --policy_path policies  # Scan the built image
+          docker run -v $(pwd)/anchore-reports:/reports anchore/inline-scan:v0.7.2 myapp:${{ github.sha }}
+
 
       - uses: actions/upload-artifact@v2  # Upload scan results
         with:
