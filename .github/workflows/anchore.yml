@@ -21,9 +21,10 @@ jobs:
         run: |
           docker buildx build --platform linux/amd64 -t myapp:${{ github.sha }} .  # Build for amd64 platform
 
-      - name: Install Anchore CLI (improved)
+      - name: Instalar la CLI de Anchore (mejorado)
         run: |
-          curl -fsSL https://raw.githubusercontent.com/anchore/ci-tools/master/scripts/ci-tools.sh | sudo -E bash -  # Install Anchore CLI securely
+          curl -fsSL https://ci-tools.anchore.io/ci-tools.sh | bash -  # Descargar y ejecutar el script de forma segura
+        
 
       - name: Scan image with Anchore (improved)
         run: |
