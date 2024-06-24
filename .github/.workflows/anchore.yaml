@@ -1,9 +1,7 @@
 name: CI/CD Pipeline
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 
 jobs:
   build-and-scan:
@@ -28,11 +26,11 @@ jobs:
 
       - name: Install Anchore CLI
         run: |
-          sudo curl -s <https://ci-tools.anchore.io/ci-tools.sh> | sudo bash
+          sudo curl -s https://ci-tools.anchore.io/ci-tools.sh | sudo bash
 
       - name: Scan image with Anchore
         run: |
-          docker run -v $(pwd)/anchore-reports:/reports anchore/inline-scan:v0.7.2 anchore/inline_scan:v0.7.2 --image ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} --policy_path policies
+          docker run -v $(pwd)/anchore-reports:/reports anchore/inline-scan:v0.7.2 --image ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} --policy_path policies
 
       - name: Upload scan results
         uses: actions/upload-artifact@v2
