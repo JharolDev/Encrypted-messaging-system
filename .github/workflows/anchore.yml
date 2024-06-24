@@ -17,12 +17,12 @@ jobs:
       - name: Login to DockerHub
         uses: docker/login-action@v2
         with:
-          username: ${{ secrets.DOCKER_USERNAME }} # Verifica que este secreto esté configurado correctamente
-          password: ${{ secrets.DOCKER_PASSWORD }} # Verifica que este secreto esté configurado correctamente
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Build the Docker image
         run: |
-          docker buildx build --platform linux/amd64 -t ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} .
+          docker buildx build --platform linux/amd64 -t myapp:${{ github.sha }} --load .
 
       - name: Install Anchore CLI
         run: |
@@ -30,7 +30,7 @@ jobs:
 
       - name: Scan image with Anchore
         run: |
-          docker run -v $(pwd)/anchore-reports:/reports anchore/inline-scan:v0.7.2 --image ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} --policy_path policies
+          docker run -v $(pwd)/anchore-reports:/reports anchore/inline-scan:v0.7.2 --image myapp:${{ github.sha }} --policy_path policies
 
       - name: Upload scan results
         uses: actions/upload-artifact@v2
