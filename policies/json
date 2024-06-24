@@ -1,0 +1,26 @@
+{
+  "version": "1_0",
+  "name": "anchore_policy",
+  "description": "Default policy bundle",
+  "rules": [
+    {
+      "action": "STOP",
+      "gate": "vulnerabilities",
+      "trigger": "package",
+      "params": [
+        {
+          "name": "package_type",
+          "value": "all"
+        },
+        {
+          "name": "severity_comparison",
+          "value": "="
+        },
+        {
+          "name": "severity",
+          "value": "high"
+        }
+      ]
+    }
+  ]
+}
