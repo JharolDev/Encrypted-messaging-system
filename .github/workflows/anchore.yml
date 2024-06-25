@@ -1,4 +1,3 @@
-
 name: CI/CD Pipeline
 
 on:
@@ -42,30 +41,12 @@ jobs:
           sudo apt-get install -y python3-pip
           sudo pip3 install anchorecli
 
-      - name: Configure Anchore CLI
+      - name: Scan image with Anchore
         run: |
-          anchore-cli system status
+          mkdir -p anchore-reports
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v $(pwd)/anchore-reports:/anchore-reports anchore/inline-scan:v0.7.2 ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} --policy-path policies
 
-      - name: Add Image to Anchore
-        run: |
-          anchore-cli image add ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }}
-
-      - name: Wait for Image Analysis
-        run: |
-          while [[ "$(anchore-cli image get ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} | grep "analysis_status" | awk '{print $2}')" != "analyzed" ]]; do
-            echo "Waiting for analysis to complete..."
-            sleep 10
-          done
-
-      - name: Scan Image with Anchore
-        run: |
-          anchore-cli evaluate check ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} --policy-path policies
-
-      - name: Generate Scan Report
-        run: |
-          anchore-cli image vuln ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} all --format json > anchore-reports/scan-report.json
-
-      - name: Upload Scan Results
+      - name: Upload scan results
         uses: actions/upload-artifact@v2
         with:
           name: anchore-reports
