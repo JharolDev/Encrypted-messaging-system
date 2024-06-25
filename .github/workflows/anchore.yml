@@ -1,4 +1,4 @@
-name: Security Docker Image
+name: CI/CD Pipeline with Trivy
 
 on:
  workflow_dispatch:
@@ -35,34 +35,13 @@ jobs:
     run: |
      docker buildx build --platform linux/amd64 -t ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} --push .
 
-   - name: Install Anchore CLI
+   - name: Install Trivy CLI
     run: |
-     sudo apt-get update
-     sudo apt-get install -y python3-pip
-     sudo pip3 install anchorecli
+     curl -fsSL -o trivy https://aquasecurity.github.io/trivy/latest/linux-amd64/trivy && chmod +x trivy
 
-   - name: Configure Anchore CLI
+   - name: Scan Image with Trivy
     run: |
-     anchore-cli system status
-
-   - name: Add Image to Anchore
-    run: |
-     anchore-cli image add ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }}
-
-   - name: Wait for Image Analysis
-    run: |
-     while [[ "$(anchore-cli image get ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} | grep "analysis_status" | awk '{print $2}')" != "analyzed" ]]; do
-      echo "Waiting for analysis to complete..."
-      sleep 10
-     done
-
-   - name: Scan Image with Anchore
-    run: |
-     anchore-cli evaluate check ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} --policy-path policies
-
-   - name: Generate Scan Report
-    run: |
-     anchore-cli image vuln ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} all --format json > anchore-reports/scan-report.json
+     trivy image -f ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} --output json > anchore-reports/scan-report.json
 
    - name: Upload Scan Results
     uses: actions/upload-artifact@v2
