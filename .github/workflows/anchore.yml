@@ -1,4 +1,4 @@
-name: Docker Security Image
+name: CI/CD Pipeline
 
 on:
   workflow_dispatch:
@@ -44,7 +44,7 @@ jobs:
       - name: Scan image with Anchore
         run: |
           mkdir -p anchore-reports
-          docker run -v $(pwd)/anchore-reports:/reports anchore/inline-scan:v0.7.2 --image ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} --policy-path policies
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v $(pwd)/anchore-reports:/anchore-reports anchore/inline-scan:v0.7.2 ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} --policy-path policies
 
       - name: Upload scan results
         uses: actions/upload-artifact@v2
