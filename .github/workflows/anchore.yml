@@ -1,71 +1,71 @@
-name: Docker Security Image 
+name: Security Docker Image
 
 on:
-  workflow_dispatch:
+ workflow_dispatch:
 
 jobs:
-  build-and-scan:
-    runs-on: ubuntu-latest
+ build-and-scan:
+  runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
+  steps:
+   - name: Checkout code
+    uses: actions/checkout@v2
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
+   - name: Set up Docker Buildx
+    uses: docker/setup-buildx-action@v1
 
-      - name: Login to Docker Hub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+   - name: Login to Docker Hub
+    uses: docker/login-action@v2
+    with:
+     username: ${{ secrets.DOCKER_USERNAME }}
+     password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Check if image exists in Docker Hub
-        id: check-image
-        run: |
-          IMAGE_NAME="${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }}"
-          if docker pull $IMAGE_NAME; then
-            echo "exists=true" >> $GITHUB_ENV
-          else
-            echo "exists=false" >> $GITHUB_ENV
-          fi
+   - name: Check if image exists in Docker Hub
+    id: check-image
+    run: |
+     IMAGE_NAME="${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }}"
+     if docker pull $IMAGE_NAME; then
+      echo "exists=true" >> $GITHUB_ENV
+     else
+      echo "exists=false" >> $GITHUB_ENV
+     fi
 
-      - name: Build and Push Docker Image
-        if: env.exists == 'false'
-        run: |
-          docker buildx build --platform linux/amd64 -t ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} --push .
+   - name: Build and Push Docker Image
+    if: env.exists == 'false'
+    run: |
+     docker buildx build --platform linux/amd64 -t ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} --push .
 
-      - name: Install Anchore CLI
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y python3-pip
-          sudo pip3 install anchorecli
+   - name: Install Anchore CLI
+    run: |
+     sudo apt-get update
+     sudo apt-get install -y python3-pip
+     sudo pip3 install anchorecli
 
-      - name: Configure Anchore CLI
-        run: |
-          anchore-cli system status
+   - name: Configure Anchore CLI
+    run: |
+     anchore-cli system status
 
-      - name: Add Image to Anchore
-        run: |
-          anchore-cli image add ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }}
+   - name: Add Image to Anchore
+    run: |
+     anchore-cli image add ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }}
 
-      - name: Wait for Image Analysis
-        run: |
-          while [[ "$(anchore-cli image get ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} | grep "analysis_status" | awk '{print $2}')" != "analyzed" ]]; do
-            echo "Waiting for analysis to complete..."
-            sleep 10
-          done
+   - name: Wait for Image Analysis
+    run: |
+     while [[ "$(anchore-cli image get ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} | grep "analysis_status" | awk '{print $2}')" != "analyzed" ]]; do
+      echo "Waiting for analysis to complete..."
+      sleep 10
+     done
 
-      - name: Scan Image with Anchore
-        run: |
-          anchore-cli evaluate check ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} --policy-path policies
+   - name: Scan Image with Anchore
+    run: |
+     anchore-cli evaluate check ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} --policy-path policies
 
-      - name: Generate Scan Report
-        run: |
-          anchore-cli image vuln ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} all --format json > anchore-reports/scan-report.json
+   - name: Generate Scan Report
+    run: |
+     anchore-cli image vuln ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} all --format json > anchore-reports/scan-report.json
 
-      - name: Upload Scan Results
-        uses: actions/upload-artifact@v2
-        with:
-          name: anchore-reports
-          path: ./anchore-reports
+   - name: Upload Scan Results
+    uses: actions/upload-artifact@v2
+    with:
+     name: anchore-reports
+     path: ./anchore-reports
