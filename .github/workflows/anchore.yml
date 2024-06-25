@@ -41,12 +41,61 @@ jobs:
           sudo apt-get install -y python3-pip
           sudo pip3 install anchorecli
 
-      - name: Scan image with Anchore
+      - name: Start Anchore Engine
         run: |
-          mkdir -p anchore-reports
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v $(pwd)/anchore-reports:/anchore-reports anchore/inline-scan:v0.7.2 ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} --policy-path policies
+          docker run -d -p 8228:8228 --name anchore-engine --env ANCHORE_ENDPOINT_HOSTNAME_OVERRIDE=localhost anchore/anchore-engine:v0.9.1
 
-      - name: Upload scan results
+      - name: Wait for Anchore Engine to Start
+        run: |
+          echo "Waiting for Anchore Engine to be ready..."
+          for i in {1..30}; do
+            if curl -s http://localhost:8228/v1/ | grep "anchore"; then
+              echo "Anchore Engine is ready!"
+              break
+            fi
+            echo "Still waiting..."
+            sleep 10
+          done
+
+      - name: Configure Anchore CLI
+        run: |
+          export ANCHORE_CLI_USER=admin
+          export ANCHORE_CLI_PASS=foobar
+          export ANCHORE_CLI_URL=http://localhost:8228/v1/
+          anchore-cli system status
+
+      - name: Add Image to Anchore
+        run: |
+          export ANCHORE_CLI_USER=admin
+          export ANCHORE_CLI_PASS=foobar
+          export ANCHORE_CLI_URL=http://localhost:8228/v1/
+          anchore-cli image add ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }}
+
+      - name: Wait for Image Analysis
+        run: |
+          export ANCHORE_CLI_USER=admin
+          export ANCHORE_CLI_PASS=foobar
+          export ANCHORE_CLI_URL=http://localhost:8228/v1/
+          while [[ "$(anchore-cli image get ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} | grep "analysis_status" | awk '{print $2}')" != "analyzed" ]]; do
+            echo "Waiting for analysis to complete..."
+            sleep 10
+          done
+
+      - name: Scan Image with Anchore
+        run: |
+          export ANCHORE_CLI_USER=admin
+          export ANCHORE_CLI_PASS=foobar
+          export ANCHORE_CLI_URL=http://localhost:8228/v1/
+          anchore-cli evaluate check ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} --policy-path policies
+
+      - name: Generate Scan Report
+        run: |
+          export ANCHORE_CLI_USER=admin
+          export ANCHORE_CLI_PASS=foobar
+          export ANCHORE_CLI_URL=http://localhost:8228/v1/
+          anchore-cli image vuln ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} all --format json > anchore-reports/scan-report.json
+
+      - name: Upload Scan Results
         uses: actions/upload-artifact@v2
         with:
           name: anchore-reports
