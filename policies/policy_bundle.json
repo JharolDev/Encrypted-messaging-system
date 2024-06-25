@@ -1,0 +1,27 @@
+{
+  "version": "1_0",
+  "policies": [
+    {
+      "id": "example-policy",
+      "name": "Example Policy",
+      "description": "Example policy to demonstrate Anchore",
+      "rules": [
+        {
+          "action": "STOP",
+          "gate": "vulnerabilities",
+          "trigger": "package",
+          "params": [
+            {
+              "name": "package_type",
+              "value": "all"
+            },
+            {
+              "name": "severity",
+              "value": "high"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
