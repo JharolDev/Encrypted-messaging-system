@@ -1,56 +1,85 @@
 name: Snyk Container Security Scan
 
 on:
-  push:
-    branches: 
-      - integration
-      - laboratory
-      - main
-    paths:
-      - 'Dockerfile'
+  # Solo se ejecuta en PRs hacia integration
   pull_request:
     branches: 
       - integration
-      - laboratory
-      - main
     paths:
       - 'Dockerfile'
-  # Agregar validación para PRs desde ramas feature
-    types: [opened, synchronize, reopened]
+  # Promoción entre ramas principales
+  push:
+    branches:
+      - integration
+      - laboratory
+    paths:
+      - 'Dockerfile'
   workflow_dispatch:
 
 jobs:
   container-security:
     runs-on: ubuntu-latest
-    # Modificar la estrategia para incluir la rama del PR
-    strategy:
-      matrix:
-        branch: ${{ github.event_name == 'pull_request' && [github.head_ref] || ['integration', 'laboratory', 'main'] }}
     steps:
       - uses: actions/checkout@v3
         with:
-          ref: ${{ matrix.branch }}
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
           fetch-depth: 0
       
       - name: Build Docker Image
-        run: docker build -t test-image-${{ matrix.branch }} .
+        run: docker build -t test-image-${{ github.event.pull_request.head.ref || github.ref_name }} .
       
-      - name: Run Snyk Container Test
+      - name: Run Snyk Container Test for Feature Branch
+        if: github.event_name == 'pull_request'
         uses: snyk/actions/docker@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
-          image: test-image-${{ matrix.branch }}
+          image: test-image-${{ github.event.pull_request.head.ref }}
           args: |
             --file=Dockerfile
             --severity-threshold=low
             --no-cache
-      
-      # Agregar paso de validación para PRs
-      - name: Check PR Security Status
-        if: github.event_name == 'pull_request'
+
+      - name: Run Snyk Container Test for Integration
+        if: github.ref == 'refs/heads/integration'
+        uses: snyk/actions/docker@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          image: test-image-integration
+          args: |
+            --file=Dockerfile
+            --severity-threshold=medium
+            --no-cache
+
+      - name: Run Snyk Container Test for Laboratory
+        if: github.ref == 'refs/heads/laboratory'
+        uses: snyk/actions/docker@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          image: test-image-laboratory
+          args: |
+            --file=Dockerfile
+            --severity-threshold=high
+            --no-cache
+
+      - name: Block PR on Security Issues
+        if: github.event_name == 'pull_request' && failure()
         run: |
-          if [ ${{ job.status }} == 'failure' ]; then
-            echo "❌ La validación de seguridad falló. Por favor, revisa las vulnerabilidades encontradas."
-            exit 1
-          fi
+          echo "❌ Se encontraron vulnerabilidades de seguridad. Por favor, revisa y corrige antes de mergear a integration."
+          exit 1
+          
+      - name: Generate Security Report
+        uses: snyk/actions/docker@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          image: test-image-${{ github.event.pull_request.head.ref || github.ref_name }}
+          args: --file=Dockerfile --json > snyk-container-report.json
+          
+      - name: Upload Security Report
+        uses: actions/upload-artifact@v3
+        with:
+          name: snyk-security-report-${{ github.event.pull_request.head.ref || github.ref_name }}
+          path: snyk-container-report.json
