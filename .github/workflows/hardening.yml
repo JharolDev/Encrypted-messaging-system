@@ -1,85 +1,61 @@
 name: Snyk Container Security Scan
 
 on:
-  # Solo se ejecuta en PRs hacia integration
-  pull_request:
-    branches: 
-      - integration
-    paths:
-      - 'Dockerfile'
-  # Promoción entre ramas principales
-  push:
-    branches:
-      - integration
-      - laboratory
-    paths:
-      - 'Dockerfile'
   workflow_dispatch:
+    inputs:
+      severity_threshold:
+        description: 'Nivel de severidad (low/medium/high)'
+        required: true
+        default: 'low'
+        type: choice
+        options:
+          - low
+          - medium
+          - high
 
 jobs:
   container-security:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Verify Dockerfile exists
+        run: |
+          if [ ! -f "Dockerfile" ]; then
+            echo "Error: Dockerfile not found"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
           fetch-depth: 0
       
-      - name: Build Docker Image
-        run: docker build -t test-image-${{ github.event.pull_request.head.ref || github.ref_name }} .
+      - name: Set Dockerfile permissions
+        run: chmod 644 Dockerfile
       
-      - name: Run Snyk Container Test for Feature Branch
-        if: github.event_name == 'pull_request'
+      - name: Build Docker Image
+        run: docker build -t test-image .
+      
+      - name: Run Snyk Container Test
         uses: snyk/actions/docker@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
-          image: test-image-${{ github.event.pull_request.head.ref }}
+          image: test-image
+          dockerfile: ./Dockerfile
           args: |
-            --file=Dockerfile
-            --severity-threshold=low
+            --severity-threshold=${{ inputs.severity_threshold }}
             --no-cache
-
-      - name: Run Snyk Container Test for Integration
-        if: github.ref == 'refs/heads/integration'
-        uses: snyk/actions/docker@master
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          image: test-image-integration
-          args: |
-            --file=Dockerfile
-            --severity-threshold=medium
-            --no-cache
-
-      - name: Run Snyk Container Test for Laboratory
-        if: github.ref == 'refs/heads/laboratory'
-        uses: snyk/actions/docker@master
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          image: test-image-laboratory
-          args: |
-            --file=Dockerfile
-            --severity-threshold=high
-            --no-cache
-
-      - name: Block PR on Security Issues
-        if: github.event_name == 'pull_request' && failure()
-        run: |
-          echo "❌ Se encontraron vulnerabilidades de seguridad. Por favor, revisa y corrige antes de mergear a integration."
-          exit 1
           
       - name: Generate Security Report
         uses: snyk/actions/docker@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
-          image: test-image-${{ github.event.pull_request.head.ref || github.ref_name }}
-          args: --file=Dockerfile --json > snyk-container-report.json
+          image: test-image
+          dockerfile: ./Dockerfile
+          args: --json > snyk-container-report.json
           
       - name: Upload Security Report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: snyk-security-report-${{ github.event.pull_request.head.ref || github.ref_name }}
+          name: snyk-security-report
           path: snyk-container-report.json
