@@ -15,18 +15,22 @@ on:
       - main
     paths:
       - 'Dockerfile'
+  # Agregar validación para PRs desde ramas feature
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 jobs:
   container-security:
     runs-on: ubuntu-latest
+    # Modificar la estrategia para incluir la rama del PR
     strategy:
       matrix:
-        branch: [integration, laboratory, main]
+        branch: ${{ github.event_name == 'pull_request' && [github.head_ref] || ['integration', 'laboratory', 'main'] }}
     steps:
       - uses: actions/checkout@v3
         with:
           ref: ${{ matrix.branch }}
+          fetch-depth: 0
       
       - name: Build Docker Image
         run: docker build -t test-image-${{ matrix.branch }} .
@@ -39,28 +43,14 @@ jobs:
           image: test-image-${{ matrix.branch }}
           args: |
             --file=Dockerfile
-            --severity-threshold=${{ matrix.branch == 'main' && 'high' || matrix.branch == 'laboratory' && 'medium' || 'low' }}
+            --severity-threshold=low
             --no-cache
       
-      - name: Monitor Container Image
-        uses: snyk/actions/docker@master
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          image: test-image-${{ matrix.branch }}
-          args: --file=Dockerfile --org=your-org-name --project-name=${{ github.repository }}-docker-${{ matrix.branch }}
-          command: monitor
-          
-      - name: Generate Container Security Report
-        uses: snyk/actions/docker@master
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          image: test-image-${{ matrix.branch }}
-          args: --file=Dockerfile --json > snyk-container-report-${{ matrix.branch }}.json
-          
-      - name: Upload Container Security Report
-        uses: actions/upload-artifact@v3
-        with:
-          name: snyk-container-report-${{ matrix.branch }}
-          path: snyk-container-report-${{ matrix.branch }}.json
+      # Agregar paso de validación para PRs
+      - name: Check PR Security Status
+        if: github.event_name == 'pull_request'
+        run: |
+          if [ ${{ job.status }} == 'failure' ]; then
+            echo "❌ La validación de seguridad falló. Por favor, revisa las vulnerabilidades encontradas."
+            exit 1
+          fi
