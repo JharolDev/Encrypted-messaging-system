@@ -1,76 +1,85 @@
-name: Snyk Security Scan
+name: Snyk Container Security Scan
 
 on:
-  push:
-    branches: 
-      - integration
-      - laboratory
-      - main
+  # Solo se ejecuta en PRs hacia integration
   pull_request:
     branches: 
       - integration
+    paths:
+      - 'Dockerfile'
+  # Promoción entre ramas principales
+  push:
+    branches:
+      - integration
       - laboratory
-      - main
+    paths:
+      - 'Dockerfile'
   workflow_dispatch:
 
 jobs:
-  security:
+  container-security:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        branch: [integration, laboratory, main]
     steps:
       - uses: actions/checkout@v3
         with:
-          ref: ${{ matrix.branch }}
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
+          fetch-depth: 0
       
-      - name: Run Snyk Security Scan
-        uses: snyk/actions/node@master
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          command: test
-          args: |
-            ${{ matrix.branch == 'main' && '--severity-threshold=high' ||
-               matrix.branch == 'laboratory' && '--severity-threshold=medium' ||
-               '--severity-threshold=low' }}
+      - name: Build Docker Image
+        run: docker build -t test-image-${{ github.event.pull_request.head.ref || github.ref_name }} .
       
-      - name: Run Snyk Container Test
-        if: hashFiles('Dockerfile') != ''
+      - name: Run Snyk Container Test for Feature Branch
+        if: github.event_name == 'pull_request'
         uses: snyk/actions/docker@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
-          image: test-image-${{ matrix.branch }}
-          args: --file=Dockerfile
-      
-      - name: Monitor Application Dependencies
-        uses: snyk/actions/node@master
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          command: monitor
-          args: --org=your-org-name --project-name=${{ github.repository }}-${{ matrix.branch }}
+          image: test-image-${{ github.event.pull_request.head.ref }}
+          args: |
+            --file=Dockerfile
+            --severity-threshold=low
+            --no-cache
 
-      - name: Snyk Auto-Remediation
-        if: matrix.branch == 'integration' && github.event_name == 'push'
-        uses: snyk/actions/node@master
+      - name: Run Snyk Container Test for Integration
+        if: github.ref == 'refs/heads/integration'
+        uses: snyk/actions/docker@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
-          command: fix
-          args: --org=your-org-name
-      
+          image: test-image-integration
+          args: |
+            --file=Dockerfile
+            --severity-threshold=medium
+            --no-cache
+
+      - name: Run Snyk Container Test for Laboratory
+        if: github.ref == 'refs/heads/laboratory'
+        uses: snyk/actions/docker@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          image: test-image-laboratory
+          args: |
+            --file=Dockerfile
+            --severity-threshold=high
+            --no-cache
+
+      - name: Block PR on Security Issues
+        if: github.event_name == 'pull_request' && failure()
+        run: |
+          echo "❌ Se encontraron vulnerabilidades de seguridad. Por favor, revisa y corrige antes de mergear a integration."
+          exit 1
+          
       - name: Generate Security Report
-        uses: snyk/actions/node@master
+        uses: snyk/actions/docker@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
-          command: test
-          args: --json > snyk-report-${{ matrix.branch }}.json
+          image: test-image-${{ github.event.pull_request.head.ref || github.ref_name }}
+          args: --file=Dockerfile --json > snyk-container-report.json
           
       - name: Upload Security Report
         uses: actions/upload-artifact@v3
         with:
-          name: snyk-security-report-${{ matrix.branch }}
-          path: snyk-report-${{ matrix.branch }}.json
+          name: snyk-security-report-${{ github.event.pull_request.head.ref || github.ref_name }}
+          path: snyk-container-report.json
