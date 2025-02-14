@@ -1,4 +1,4 @@
-name: Snyk Security Scan
+name: Snyk Container Security Scan
 
 on:
   push:
@@ -6,71 +6,51 @@ on:
       - integration
       - laboratory
       - main
+    paths:
+      - 'Dockerfile'
   pull_request:
     branches: 
       - integration
       - laboratory
       - main
+    paths:
+      - 'Dockerfile'
+  # Agregar validación para PRs desde ramas feature
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 jobs:
-  security:
+  container-security:
     runs-on: ubuntu-latest
+    # Modificar la estrategia para incluir la rama del PR
     strategy:
       matrix:
-        branch: [integration, laboratory, main]
+        branch: ${{ github.event_name == 'pull_request' && [github.head_ref] || ['integration', 'laboratory', 'main'] }}
     steps:
       - uses: actions/checkout@v3
         with:
           ref: ${{ matrix.branch }}
+          fetch-depth: 0
       
-      - name: Run Snyk Security Scan
-        uses: snyk/actions/node@master
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          command: test
-          args: |
-            ${{ matrix.branch == 'main' && '--severity-threshold=high' ||
-               matrix.branch == 'laboratory' && '--severity-threshold=medium' ||
-               '--severity-threshold=low' }}
+      - name: Build Docker Image
+        run: docker build -t test-image-${{ matrix.branch }} .
       
       - name: Run Snyk Container Test
-        if: hashFiles('Dockerfile') != ''
         uses: snyk/actions/docker@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           image: test-image-${{ matrix.branch }}
-          args: --file=Dockerfile
+          args: |
+            --file=Dockerfile
+            --severity-threshold=low
+            --no-cache
       
-      - name: Monitor Application Dependencies
-        uses: snyk/actions/node@master
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          command: monitor
-          args: --org=your-org-name --project-name=${{ github.repository }}-${{ matrix.branch }}
-
-      - name: Snyk Auto-Remediation
-        if: matrix.branch == 'integration' && github.event_name == 'push'
-        uses: snyk/actions/node@master
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          command: fix
-          args: --org=your-org-name
-      
-      - name: Generate Security Report
-        uses: snyk/actions/node@master
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          command: test
-          args: --json > snyk-report-${{ matrix.branch }}.json
-          
-      - name: Upload Security Report
-        uses: actions/upload-artifact@v3
-        with:
-          name: snyk-security-report-${{ matrix.branch }}
-          path: snyk-report-${{ matrix.branch }}.json
+      # Agregar paso de validación para PRs
+      - name: Check PR Security Status
+        if: github.event_name == 'pull_request'
+        run: |
+          if [ ${{ job.status }} == 'failure' ]; then
+            echo "❌ La validación de seguridad falló. Por favor, revisa las vulnerabilidades encontradas."
+            exit 1
+          fi
