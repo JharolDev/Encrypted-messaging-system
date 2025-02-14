@@ -24,64 +24,53 @@ jobs:
         with:
           ref: ${{ matrix.branch }}
       
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '16'
-      
-      - name: Install Snyk CLI
-        run: npm install -g snyk
-      
-      - name: Authenticate Snyk
-        run: snyk auth ${{ secrets.SNYK_TOKEN }}
-      
-      - name: Run Snyk to check for vulnerabilities
-        continue-on-error: true
-        run: snyk test
+      - name: Run Snyk Security Scan
+        uses: snyk/actions/node@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: test
+          args: |
+            ${{ matrix.branch == 'main' && '--severity-threshold=high' ||
+               matrix.branch == 'laboratory' && '--severity-threshold=medium' ||
+               '--severity-threshold=low' }}
       
       - name: Run Snyk Container Test
         if: hashFiles('Dockerfile') != ''
-        continue-on-error: true
-        run: |
-          docker build -t test-image-${{ matrix.branch }} .
-          snyk container test test-image-${{ matrix.branch }} --file=Dockerfile
+        uses: snyk/actions/docker@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          image: test-image-${{ matrix.branch }}
+          args: --file=Dockerfile
       
       - name: Monitor Application Dependencies
-        run: snyk monitor --org=your-org-name --project-name=${{ github.repository }}-${{ matrix.branch }}
+        uses: snyk/actions/node@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: monitor
+          args: --org=your-org-name --project-name=${{ github.repository }}-${{ matrix.branch }}
 
       - name: Snyk Auto-Remediation
-        if: github.event_name == 'push'
-        run: |
-          if [ "${{ matrix.branch }}" = "integration" ]; then
-            snyk fix --org=your-org-name
-          fi
+        if: matrix.branch == 'integration' && github.event_name == 'push'
+        uses: snyk/actions/node@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-      
-      - name: Run Snyk with Severity Threshold
-        run: |
-          if [ "${{ matrix.branch }}" = "main" ]; then
-            snyk test --severity-threshold=high
-          elif [ "${{ matrix.branch }}" = "laboratory" ]; then
-            snyk test --severity-threshold=medium
-          else
-            snyk test --severity-threshold=low
-          fi
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: fix
+          args: --org=your-org-name
       
       - name: Generate Security Report
-        run: |
-          snyk test --json > snyk-report-${{ matrix.branch }}.json
+        uses: snyk/actions/node@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: test
+          args: --json > snyk-report-${{ matrix.branch }}.json
           
       - name: Upload Security Report
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: snyk-security-report-${{ matrix.branch }}
           path: snyk-report-${{ matrix.branch }}.json
