@@ -17,7 +17,7 @@ jobs:
   container-security:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v3
         with:
           fetch-depth: 0
       
@@ -42,6 +42,8 @@ jobs:
           DOCKERFILE_PATH=$(find . -name "Dockerfile" -type f | head -n 1)
           if [ -n "$DOCKERFILE_PATH" ]; then
             echo "Usando Dockerfile en: $DOCKERFILE_PATH"
+            # Modificado para usar la imagen base de .NET
+            sed -i 's/FROM node.*/FROM mcr.microsoft.com/dotnet\/sdk:6.0/' "$DOCKERFILE_PATH"
             docker build -t test-image -f "$DOCKERFILE_PATH" .
           else
             echo "Error: No se encontró ningún Dockerfile"
@@ -67,7 +69,7 @@ jobs:
           args: --json > snyk-container-report.json
           
       - name: Upload Security Report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: snyk-security-report
           path: snyk-container-report.json
