@@ -1,0 +1,87 @@
+name: Snyk Security Scan
+
+on:
+  push:
+    branches: 
+      - integration
+      - laboratory
+      - main
+  pull_request:
+    branches: 
+      - integration
+      - laboratory
+      - main
+  workflow_dispatch:
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        branch: [integration, laboratory, main]
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{ matrix.branch }}
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+      
+      - name: Install Snyk CLI
+        run: npm install -g snyk
+      
+      - name: Authenticate Snyk
+        run: snyk auth ${{ secrets.SNYK_TOKEN }}
+      
+      - name: Run Snyk to check for vulnerabilities
+        continue-on-error: true
+        run: snyk test
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      
+      - name: Run Snyk Container Test
+        if: hashFiles('Dockerfile') != ''
+        continue-on-error: true
+        run: |
+          docker build -t test-image-${{ matrix.branch }} .
+          snyk container test test-image-${{ matrix.branch }} --file=Dockerfile
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      
+      - name: Monitor Application Dependencies
+        run: snyk monitor --org=your-org-name --project-name=${{ github.repository }}-${{ matrix.branch }}
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+      - name: Snyk Auto-Remediation
+        if: github.event_name == 'push'
+        run: |
+          if [ "${{ matrix.branch }}" = "integration" ]; then
+            snyk fix --org=your-org-name
+          fi
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      
+      - name: Run Snyk with Severity Threshold
+        run: |
+          if [ "${{ matrix.branch }}" = "main" ]; then
+            snyk test --severity-threshold=high
+          elif [ "${{ matrix.branch }}" = "laboratory" ]; then
+            snyk test --severity-threshold=medium
+          else
+            snyk test --severity-threshold=low
+          fi
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      
+      - name: Generate Security Report
+        run: |
+          snyk test --json > snyk-report-${{ matrix.branch }}.json
+          
+      - name: Upload Security Report
+        uses: actions/upload-artifact@v2
+        with:
+          name: snyk-security-report-${{ matrix.branch }}
+          path: snyk-report-${{ matrix.branch }}.json
