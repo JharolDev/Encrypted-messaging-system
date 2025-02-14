@@ -17,22 +17,36 @@ jobs:
   container-security:
     runs-on: ubuntu-latest
     steps:
-      - name: Verify Dockerfile exists
-        run: |
-          if [ ! -f "Dockerfile" ]; then
-            echo "Error: Dockerfile not found"
-            exit 1
-          fi
-
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v3
         with:
           fetch-depth: 0
       
+      - name: Verify Dockerfile exists
+        run: |
+          pwd
+          ls -la
+          echo "Verificando ubicación del Dockerfile..."
+          find . -name "Dockerfile" -type f
+      
       - name: Set Dockerfile permissions
-        run: chmod 644 Dockerfile
+        run: |
+          if [ -f "Dockerfile" ]; then
+            chmod 644 Dockerfile
+          else
+            echo "Buscando Dockerfile en subdirectorios..."
+            find . -name "Dockerfile" -type f -exec chmod 644 {} \;
+          fi
       
       - name: Build Docker Image
-        run: docker build -t test-image .
+        run: |
+          DOCKERFILE_PATH=$(find . -name "Dockerfile" -type f | head -n 1)
+          if [ -n "$DOCKERFILE_PATH" ]; then
+            echo "Usando Dockerfile en: $DOCKERFILE_PATH"
+            docker build -t test-image -f "$DOCKERFILE_PATH" .
+          else
+            echo "Error: No se encontró ningún Dockerfile"
+            exit 1
+          fi
       
       - name: Run Snyk Container Test
         uses: snyk/actions/docker@master
@@ -40,7 +54,6 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           image: test-image
-          dockerfile: ./Dockerfile
           args: |
             --severity-threshold=${{ inputs.severity_threshold }}
             --no-cache
@@ -51,11 +64,10 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           image: test-image
-          dockerfile: ./Dockerfile
           args: --json > snyk-container-report.json
           
       - name: Upload Security Report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: snyk-security-report
           path: snyk-container-report.json
