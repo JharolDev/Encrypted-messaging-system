@@ -1,4 +1,4 @@
-name: Snyk Security Scan
+name: Snyk Container Security Scan
 
 on:
   push:
@@ -6,71 +6,61 @@ on:
       - integration
       - laboratory
       - main
+    paths:
+      - 'Dockerfile'
   pull_request:
     branches: 
       - integration
       - laboratory
       - main
+    paths:
+      - 'Dockerfile'
   workflow_dispatch:
 
 jobs:
-  security:
+  container-security:
     runs-on: ubuntu-latest
     strategy:
       matrix:
         branch: [integration, laboratory, main]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v3
         with:
           ref: ${{ matrix.branch }}
       
-      - name: Run Snyk Security Scan
-        uses: snyk/actions/node@master
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          command: test
-          args: |
-            ${{ matrix.branch == 'main' && '--severity-threshold=high' ||
-               matrix.branch == 'laboratory' && '--severity-threshold=medium' ||
-               '--severity-threshold=low' }}
+      - name: Build Docker Image
+        run: docker build -t test-image-${{ matrix.branch }} .
       
       - name: Run Snyk Container Test
-        if: hashFiles('Dockerfile') != ''
         uses: snyk/actions/docker@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           image: test-image-${{ matrix.branch }}
-          args: --file=Dockerfile
+          args: |
+            --file=Dockerfile
+            --severity-threshold=${{ matrix.branch == 'main' && 'high' || matrix.branch == 'laboratory' && 'medium' || 'low' }}
+            --no-cache
       
-      - name: Monitor Application Dependencies
-        uses: snyk/actions/node@master
+      - name: Monitor Container Image
+        uses: snyk/actions/docker@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
+          image: test-image-${{ matrix.branch }}
+          args: --file=Dockerfile --org=your-org-name --project-name=${{ github.repository }}-docker-${{ matrix.branch }}
           command: monitor
-          args: --org=your-org-name --project-name=${{ github.repository }}-${{ matrix.branch }}
-
-      - name: Snyk Auto-Remediation
-        if: matrix.branch == 'integration' && github.event_name == 'push'
-        uses: snyk/actions/node@master
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          command: fix
-          args: --org=your-org-name
-      
-      - name: Generate Security Report
-        uses: snyk/actions/node@master
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          command: test
-          args: --json > snyk-report-${{ matrix.branch }}.json
           
-      - name: Upload Security Report
-        uses: actions/upload-artifact@v4
+      - name: Generate Container Security Report
+        uses: snyk/actions/docker@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
-          name: snyk-security-report-${{ matrix.branch }}
-          path: snyk-report-${{ matrix.branch }}.json
+          image: test-image-${{ matrix.branch }}
+          args: --file=Dockerfile --json > snyk-container-report-${{ matrix.branch }}.json
+          
+      - name: Upload Container Security Report
+        uses: actions/upload-artifact@v3
+        with:
+          name: snyk-container-report-${{ matrix.branch }}
+          path: snyk-container-report-${{ matrix.branch }}.json
