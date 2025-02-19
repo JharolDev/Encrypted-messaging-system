@@ -1,29 +1,54 @@
-name: Docker Image Security Scan
+name: Snyk Container Security Scan
 
 on:
-  pull_request:
-    types: [opened, synchronize]
+  workflow_dispatch:
+    inputs:
+      severity_threshold:
+        description: 'Nivel de severidad (low/medium/high)'
+        required: true
+        default: 'low'
+        type: choice
+        options:
+          - low
+          - medium
+          - high
 
 jobs:
-  security:
+  container-security:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Build Docker Image
+      
+      - name: Verify Dockerfile exists
         run: |
-          if [ -f "Dockerfile" ]; then
-            docker build -t test-image .
-          else
-            echo "Error: Dockerfile no encontrado"
+          if [ ! -f "Dockerfile" ]; then
+            echo "Error: Dockerfile not found"
             exit 1
           fi
+      
+      - name: Build Docker Image
+        run: docker build -t test-image .
+      
       - name: Run Snyk Container Test
-        uses: snyk/actions/docker@master
+        uses: snyk/actions/container@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           image: test-image
-          args: --file=Dockerfile
+          args: --severity-threshold=${{ inputs.severity_threshold }}
+      
+      - name: Generate Security Report
+        uses: snyk/actions/container@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          image: test-image
+          args: --json > snyk-container-report.json
+      
+      - name: Upload Security Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: snyk-security-report
+          path: snyk-container-report.json
