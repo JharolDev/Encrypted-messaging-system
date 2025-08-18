@@ -17,19 +17,16 @@ jobs:
   container-security:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
       - name: Verify Dockerfile exists
         run: |
           if [ ! -f "Dockerfile" ]; then
             echo "Error: Dockerfile not found"
             exit 1
           fi
-
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      
-      - name: Set Dockerfile permissions
-        run: chmod 644 Dockerfile
       
       - name: Build Docker Image
         run: docker build -t test-image .
@@ -40,20 +37,16 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           image: test-image
-          dockerfile: ./Dockerfile
-          args: |
-            --severity-threshold=${{ inputs.severity_threshold }}
-            --no-cache
-          
+          args: --severity-threshold=${{ inputs.severity_threshold }}
+      
       - name: Generate Security Report
         uses: snyk/actions/docker@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           image: test-image
-          dockerfile: ./Dockerfile
           args: --json > snyk-container-report.json
-          
+      
       - name: Upload Security Report
         uses: actions/upload-artifact@v4
         with:
